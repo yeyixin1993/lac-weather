@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LAC 每周天气总结｜中美城市体感对比</title>
+  <style>
+    :root{
+      --bg:#0b1020;
+      --bg2:#121a33;
+      --card:rgba(255,255,255,.09);
+      --stroke:rgba(255,255,255,.16);
+      --text:#eaf2ff;
+      --muted:#a7b3cc;
+      --accent:#79b8ff;
+      --warm:#ffb86b;
+      --cold:#8bd3ff;
+      --good:#92f2b8;
+      --shadow:0 12px 30px rgba(0,0,0,.35);
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      color:var(--text);
+      font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+      background:
+        radial-gradient(1200px 700px at 10% -10%, #1b3b72 0%, rgba(11,16,32,0) 60%),
+        radial-gradient(1000px 600px at 90% -20%, #3a2b74 0%, rgba(11,16,32,0) 55%),
+        linear-gradient(180deg, var(--bg2), var(--bg));
+      min-height:100vh;
+      padding:20px;
+    }
+    .container{max-width:1500px;margin:0 auto}
+    h1{margin:0;font-size:28px;letter-spacing:.3px}
+    .sub{margin-top:8px;color:var(--muted);font-size:14px;line-height:1.6}
+
+    .toolbar{
+      margin-top:16px;
+      display:grid;
+      gap:10px;
+      grid-template-columns:1.2fr .9fr .9fr 1.2fr auto;
+    }
+    .glass{
+      background:var(--card);
+      border:1px solid var(--stroke);
+      border-radius:16px;
+      backdrop-filter: blur(8px);
+      box-shadow:var(--shadow);
+    }
+    .field{padding:12px 14px}
+    .field label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px}
+    .field input,.field select,.field button{
+      width:100%;
+      background:rgba(255,255,255,.06);
+      border:1px solid rgba(255,255,255,.2);
+      color:var(--text);
+      border-radius:10px;
+      padding:10px 12px;
+      font-size:14px;
+      outline:none;
+    }
+    /* 修复下拉框选项在部分系统中默认白底白字的问题 */
+    .field select option { background-color: var(--bg2); color: #fff; }
+    
+    .field button{cursor:pointer;background:linear-gradient(180deg,#7ec0ff,#5ca0ff);border:none;color:#fff;font-weight:700}
+    .field button:disabled{opacity:.5;cursor:not-allowed}
+
+    .status{margin-top:10px;color:var(--muted);font-size:13px}
+
+    .section-title{margin:20px 0 10px;font-size:18px}
+
+    .chips{display:flex;flex-wrap:wrap;gap:8px}
+    .chip{padding:6px 10px;border-radius:999px;background:rgba(255,255,255,.08);border:1px solid var(--stroke);font-size:12px;color:var(--muted)}
+
+    .china-grid{
+      display:grid;
+      gap:10px;
+      grid-template-columns:repeat(auto-fit,minmax(200px,1fr));
+    }
+    .city-card{padding:14px}
+    .city-name{font-weight:700;font-size:15px}
+    .city-en{font-size:12px;color:var(--muted)}
+    .now{display:flex;align-items:end;gap:10px;margin-top:8px}
+    .temp{font-size:34px;line-height:1;font-weight:800}
+    .feel{color:var(--muted);font-size:13px}
+    .mini{margin-top:8px;font-size:12px;color:var(--muted);line-height:1.6}
+
+    /* 优化表格移动端浏览体验：支持水平滚动并锁定头部和左侧 */
+    .compare-table-wrap{
+      overflow-x:auto;
+      -webkit-overflow-scrolling:touch;
+      margin-bottom:15px;
+    }
+    table{width:100%;border-collapse:collapse;min-width:640px;white-space:nowrap}
+    th,td{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.12);text-align:left;font-size:13px}
+    th{color:#c8d9ff;font-weight:700;background:rgba(255,255,255,.05);position:sticky;top:0;z-index:2}
+    @media (max-width: 660px) {
+      .compare-table-wrap { box-shadow: inset -10px 0 15px -10px rgba(0,0,0,.5); }
+      th:nth-child(2), td:nth-child(2) {
+        position: sticky;
+        left: 0;
+        background: var(--bg2);
+        z-index: 1;
+        box-shadow: 2px 0 8px rgba(0,0,0,.2);
+      }
+      th:nth-child(2) { z-index: 3; }
+      th:first-child, td:first-child { display: none; } /* 手机版隐藏独立的Rank列以省空间，靠名字辨识 */
+    }
+    .delta-hot{color:var(--warm);font-weight:700}
+    .delta-cold{color:var(--cold);font-weight:700}
+
+    .schools-grid{
+      display:grid;
+      gap:10px;
+      grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
+      margin-top:10px;
+    }
+    .school-card{padding:14px;display:flex;flex-direction:column;gap:8px}
+    .head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+    .rank{font-size:12px;color:#d6e6ff;background:rgba(121,184,255,.2);border:1px solid rgba(121,184,255,.45);border-radius:999px;padding:3px 8px;white-space:nowrap}
+    .name{font-weight:700;font-size:15px;line-height:1.35}
+    .town{font-size:12px;color:var(--muted)}
+    .metrics{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:2px}
+    .metric{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:8px}
+    .metric .k{font-size:11px;color:var(--muted)}
+    .metric .v{margin-top:3px;font-size:14px;font-weight:700}
+    .spark{height:34px;width:100%;margin-top:4px}
+
+    .foot{margin:16px 0 6px;color:var(--muted);font-size:12px;line-height:1.7}
+
+    @media (max-width:1080px){
+      .toolbar{grid-template-columns:1fr 1fr}
+    }
+    @media (max-width:660px){
+      .toolbar{grid-template-columns:1fr}
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>LAC 每周天气总结（直观体感对比）</h1>
+    <div class="sub">
+      对比文理学院（LAC）所在地与国内7大城市的天气。<br>
+      周期：过去 7 天（含今天实时数据）。通过实时体感温度让家长获得更直观的感受。
+    </div>
+
+    <div class="toolbar">
+      <div class="field glass">
+        <label>参照国内城市</label>
+        <select id="compareCity"></select>
+      </div>
+      <div class="field glass">
+        <label>学校检索 (英文)</label>
+        <input id="searchInput" type="text" placeholder="如 Williams / Amherst" />
+      </div>
+      <div class="field glass">
+        <label>排序方式</label>
+        <select id="sortBy">
+          <option value="rank">按学校排名</option>
+          <option value="feels_desc">按当前体感 (高→低)</option>
+          <option value="avg_temp_desc">按周平均温 (高→低)</option>
+          <option value="delta_compare_desc">与参照城市体感差 (热→冷)</option>
+          <option value="delta_compare_asc">与参照城市体感差 (冷→热)</option>
+        </select>
+      </div>
+      <div class="field glass">
+        <label>统计周期</label>
+        <input id="weekRange" type="text" readonly />
+      </div>
+      <div class="field glass">
+        <label>&nbsp;</label>
+        <button id="refreshBtn">刷新实时数据</button>
+      </div>
+    </div>
+
+    <div id="status" class="status">准备拉取数据...</div>
+
+    <h2 class="section-title">国内参照城市（实时 & 过去7天趋势）</h2>
+    <div id="chinaGrid" class="china-grid"></div>
+
+    <h2 class="section-title">LAC 与参照城市实时对比一览</h2>
+    <div class="glass compare-table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Rank</th>
+            <th>School (Town)</th>
+            <th>当前气温</th>
+            <th>当前体感</th>
+            <th>较参照城</br>市体感差</th>
+            <th>过去7天均高 / 均低</th>
+          </tr>
+        </thead>
+        <tbody id="compareBody"></tbody>
+      </table>
+    </div>
+
+    <h2 class="section-title">LAC 详细天气卡片（模拟 iPhone 天气）</h2>
+    <div class="chips" id="quickStats"></div>
+    <div id="schoolsGrid" class="schools-grid"></div>
+
+    <div class="foot glass" style="padding:12px 14px;">
+      数据源：Open-Meteo（精准无需科学上网）。<br>
+      字段说明：实时基于 current API，历史7天基于 daily 指标。
+    </div>
+  </div>
+
+  <script>
+    const CHINA_CITIES = [
+      { id:'harbin', name:'哈尔滨', en:'Harbin', lat:45.8038, lon:126.5349 },
+      { id:'mohe', name:'漠河', en:'Mohe', lat:52.97, lon:122.53 },
+      { id:'beijing', name:'北京', en:'Beijing', lat:39.9042, lon:116.4074 },
+      { id:'shanghai', name:'上海', en:'Shanghai', lat:31.2304, lon:121.4737 },
+      { id:'wuhan', name:'武汉', en:'Wuhan', lat:30.5928, lon:114.3055 },
+      { id:'guangzhou', name:'广州', en:'Guangzhou', lat:23.1291, lon:113.2644 },
+      { id:'sanya', name:'三亚', en:'Sanya', lat:18.2528, lon:109.5119 }
+    ];
+
+    const LAC_COLLEGES = [
+      {rank:1, college:'Williams College', town:'Williamstown, MA', lat:42.7120, lon:-73.2037},
+      {rank:2, college:'Amherst College', town:'Amherst, MA', lat:42.3729, lon:-72.5199},
+      {rank:3, college:'United States Naval Academy', town:'Annapolis, MD', lat:38.9853, lon:-76.4871},
+      {rank:4, college:'Swarthmore College', town:'Swarthmore, PA', lat:39.9020, lon:-75.3490},
+      {rank:5, college:'Bowdoin College', town:'Brunswick, ME', lat:43.9140, lon:-69.9653},
+      {rank:7, college:'Pomona College', town:'Claremont, CA', lat:34.0970, lon:-117.7130},
+      {rank:7, college:'Claremont McKenna College', town:'Claremont, CA', lat:34.1016, lon:-117.7066},
+      {rank:7, college:'Wellesley College', town:'Wellesley, MA', lat:42.2936, lon:-71.3029},
+      {rank:10, college:'United States Military Academy at West Point', town:'West Point, NY', lat:41.3910, lon:-73.9550},
+      {rank:10, college:'Carleton College', town:'Northfield, MN', lat:44.4565, lon:-93.1616},
+      {rank:10, college:'Harvey Mudd College', town:'Claremont, CA', lat:34.1060, lon:-117.7110},
+      {rank:13, college:'Barnard College', town:'New York, NY', lat:40.8090, lon:-73.9630},
+      {rank:13, college:'Davidson College', town:'Davidson, NC', lat:35.4993, lon:-80.8487},
+      {rank:13, college:'Middlebury College', town:'Middlebury, VT', lat:44.0153, lon:-73.1673},
+      {rank:13, college:'Smith College', town:'Northampton, MA', lat:42.3180, lon:-72.6371},
+      {rank:13, college:'Vassar College', town:'Poughkeepsie, NY', lat:41.6869, lon:-73.8940},
+      {rank:13, college:'Wesleyan University', town:'Middletown, CT', lat:41.5560, lon:-72.6550},
+      {rank:22, college:'Colgate University', town:'Hamilton, NY', lat:42.8183, lon:-75.5358},
+      {rank:24, college:'Haverford College', town:'Haverford, PA', lat:40.0120, lon:-75.3070},
+      {rank:24, college:'Bates College', town:'Lewiston, ME', lat:44.1050, lon:-70.2068},
+      {rank:24, college:'Colby College', town:'Waterville, ME', lat:44.5650, lon:-69.6624},
+      {rank:27, college:'College of the Holy Cross', town:'Worcester, MA', lat:42.2353, lon:-71.8098},
+      {rank:29, college:'Mount Holyoke College', town:'South Hadley, MA', lat:42.2557, lon:-72.5754},
+      {rank:30, college:'Bucknell University', town:'Lewisburg, PA', lat:40.9542, lon:-76.8867},
+      {rank:30, college:'Colorado College', town:'Colorado Springs, CO', lat:38.8462, lon:-104.8269},
+      {rank:34, college:'Denison University', town:'Granville, OH', lat:40.0743, lon:-82.5193},
+      {rank:35, college:'Franklin & Marshall College', town:'Lancaster, PA', lat:40.0470, lon:-76.3160},
+      {rank:37, college:'Scripps College', town:'Claremont, CA', lat:34.1043, lon:-117.7100},
+      {rank:37, college:'Skidmore College', town:'Saratoga Springs, NY', lat:43.0973, lon:-73.7839},
+      {rank:37, college:'Spelman College', town:'Atlanta, GA', lat:33.7459, lon:-84.4119},
+      {rank:37, college:'Trinity College', town:'Hartford, CT', lat:41.7470, lon:-72.6920},
+      {rank:44, college:'Union College', town:'Schenectady, NY', lat:42.8200, lon:-73.9270},
+      {rank:45, college:'The University of the South', town:'Sewanee, TN', lat:35.2040, lon:-85.9210},
+      {rank:45, college:'Kenyon College', town:'Gambier, OH', lat:40.3745, lon:-82.3960},
+      {rank:45, college:'Dickinson College', town:'Carlisle, PA', lat:40.2039, lon:-77.2003},
+      {rank:45, college:'Berea College', town:'Berea, KY', lat:37.5687, lon:-84.2963},
+      {rank:45, college:'Furman University', town:'Greenville, SC', lat:34.9240, lon:-82.4380},
+      {rank:50, college:'Connecticut College', town:'New London, CT', lat:41.3780, lon:-72.1060},
+      {rank:50, college:'Hillsdale College', town:'Hillsdale, MI', lat:41.9336, lon:-84.6334},
+      {rank:50, college:'Wabash College', town:'Crawfordsville, IN', lat:40.0428, lon:-86.9047},
+      {rank:50, college:'Wheaton College (IL)', town:'Wheaton, IL', lat:41.8684, lon:-88.0987},
+      {rank:55, college:'Centre College', town:'Danville, KY', lat:37.6456, lon:-84.7722},
+      {rank:55, college:'Thomas Aquinas College', town:'Santa Paula, CA', lat:34.4189, lon:-119.1030},
+      {rank:58, college:'Oberlin College', town:'Oberlin, OH', lat:41.2939, lon:-82.2174},
+      {rank:58, college:'St. Lawrence University', town:'Canton, NY', lat:44.5903, lon:-75.1662},
+      {rank:58, college:'Whitman College', town:'Walla Walla, WA', lat:46.0710, lon:-118.3300},
+      {rank:63, college:'Principia College', town:'Elsah, IL', lat:38.9556, lon:-90.3615},
+      {rank:65, college:'Virginia Military Institute', town:'Lexington, VA', lat:37.7867, lon:-79.4350},
+      {rank:67, college:'Kalamazoo College', town:'Kalamazoo, MI', lat:42.2903, lon:-85.5992},
+      {rank:67, college:'Agnes Scott College', town:'Decatur, GA', lat:33.7684, lon:-84.2949},
+      {rank:67, college:'Wofford College', town:'Spartanburg, SC', lat:34.9565, lon:-81.9320},
+      {rank:70, college:'Bard College', town:'Annandale on Hudson, NY', lat:42.0184, lon:-73.9101}
+    ];
+
+    const WEATHER_MAP = {
+      0:'晴',1:'大部分晴朗',2:'局部多云',3:'阴天',45:'有雾',48:'冻雾',
+      51:'小毛毛雨',53:'毛毛雨',55:'大毛毛雨',56:'小冻毛毛雨',57:'大冻毛毛雨',
+      61:'小雨',63:'中雨',65:'大雨',66:'小冻雨',67:'大冻雨',
+      71:'小雪',73:'中雪',75:'大雪',77:'雪粒',
+      80:'小阵雨',81:'阵雨',82:'强阵雨',85:'小阵雪',86:'大阵雪',
+      95:'雷阵雨',96:'雷阵雨伴有冰雹',99:'强雷阵雨伴有冰雹'
+    };
+
+    const state = {
+      chinaData: new Map(),
+      schoolData: [],
+      compareId: 'shanghai',
+      search: '',
+      sortBy: 'rank'
+    };
+
+    const $ = (id) => document.getElementById(id);
+
+    function fmt(v){ return Number.isFinite(v) ? `${Math.round(v)}°C` : '—'; }
+    function avg(nums){ const a = nums.filter(Number.isFinite); return a.length ? a.reduce((s,n)=>s+n,0)/a.length : NaN; }
+
+    function weekRangeText(){
+      const end = new Date();
+      const start = new Date(end);
+      start.setDate(end.getDate()-6);
+      const f = d => `${d.getMonth()+1}/${d.getDate()}`;
+      return `${f(start)} - ${f(end)} (近7天含今日)`;
+    }
+
+    function sparkline(values){
+      const v = values.filter(Number.isFinite);
+      if (!v.length) return '';
+      const min = Math.min(...v), max = Math.max(...v);
+      const spread = Math.max(max-min, 1);
+      const w = 240, h = 48; // 增加图表高度避开裁剪
+      let maxI = -1, minI = -1;
+      
+      const ptsObj = values.map((n,i)=>{
+        const x = (i/(values.length-1||1))*w;
+        const y = Number.isFinite(n) ? (h - 16) - ((n-min)/spread)*(h - 32) : h/2;
+        if(n === max && maxI === -1) maxI = i;
+        if(n === min && minI === -1) minI = i;
+        return {x, y, n};
+      });
+      const ptsStr = ptsObj.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+
+      let labels = '';
+      if(maxI !== -1) {
+        let align = maxI === 0 ? 'start' : (maxI === values.length-1 ? 'end' : 'middle');
+        labels += `<text x="${ptsObj[maxI].x}" y="${ptsObj[maxI].y - 5}" fill="var(--warm)" font-size="11" font-weight="bold" text-anchor="${align}">${Math.round(max)}°</text>`;
+      }
+      if(minI !== -1 && minI !== maxI) {
+        let align = minI === 0 ? 'start' : (minI === values.length-1 ? 'end' : 'middle');
+        labels += `<text x="${ptsObj[minI].x}" y="${ptsObj[minI].y + 12}" fill="var(--cold)" font-size="11" font-weight="bold" text-anchor="${align}">${Math.round(min)}°</text>`;
+      }
+
+      return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="height:48px;width:100%;margin-top:6px;overflow:visible;">
+        <polyline fill="none" stroke="#8bd3ff" stroke-width="2.5" stroke-linejoin="round" points="${ptsStr}"/>
+        ${labels}
+      </svg>`;
+    }
+
+    async function fetchWeather(lat, lon){
+      const url = new URL('https://api.open-meteo.com/v1/forecast');
+      url.searchParams.set('latitude', lat);
+      url.searchParams.set('longitude', lon);
+      url.searchParams.set('timezone', 'auto');
+      url.searchParams.set('temperature_unit', 'celsius');
+      url.searchParams.set('past_days', '6');  // 过去6天 + forecast_days:1 (今天) = 7天数据。
+      url.searchParams.set('forecast_days', '1');
+      url.searchParams.set('current', 'temperature_2m,apparent_temperature,weather_code');
+      url.searchParams.set('daily', 'temperature_2m_max,temperature_2m_min,temperature_2m_mean,apparent_temperature_max,apparent_temperature_min,weather_code');
+
+      const r = await fetch(url);
+      if(!r.ok) throw new Error(`API Error ${r.status}`);
+      const j = await r.json();
+
+      const highs = j?.daily?.temperature_2m_max || [];
+      const lows = j?.daily?.temperature_2m_min || [];
+      const means = j?.daily?.temperature_2m_mean || [];
+      const feelHighs = j?.daily?.apparent_temperature_max || [];
+      const feelLows = j?.daily?.apparent_temperature_min || [];
+      const dailyCodes = j?.daily?.weather_code || [];
+      const dates = j?.daily?.time || [];
+      
+      let sunny=0, cloud=0, rain=0, snow=0;
+      dailyCodes.forEach(c => {
+        if([0,1].includes(c)) sunny++;
+        else if([2,3,45,48].includes(c)) cloud++;
+        else if([71,73,75,77,85,86].includes(c)) snow++;
+        else rain++;
+      });
+
+      const hottestIdx = highs.reduce((m,v,i,a)=> Number.isFinite(v) && (m<0 || v>a[m]) ? i : m, -1);
+      const coldestIdx = lows.reduce((m,v,i,a)=> Number.isFinite(v) && (m<0 || v<a[m]) ? i : m, -1);
+
+      return {
+        nowTemp: j?.current?.temperature_2m,
+        nowFeels: j?.current?.apparent_temperature,
+        nowCode: j?.current?.weather_code,
+        avgTemp: avg(means),
+        avgHigh: avg(highs),
+        avgLow: avg(lows),
+        avgFeelHigh: avg(feelHighs),
+        avgFeelLow: avg(feelLows),
+        highs, lows, means, feelHighs, feelLows, dates,
+        weatherCounts: { sunny, cloud, rain, snow },
+        hottestDay: hottestIdx >=0 ? { date: dates[hottestIdx], value: highs[hottestIdx] } : null,
+        coldestDay: coldestIdx >=0 ? { date: dates[coldestIdx], value: lows[coldestIdx] } : null
+      };
+    }
+
+    async function runConcurrency(items, processFn, limit=6){
+      const results = new Array(items.length);
+      let i = 0;
+      async function worker(){
+        while(i < items.length){
+          const currentIndex = i++;
+          results[currentIndex] = await processFn(items[currentIndex]);
+        }
+      }
+      await Promise.all(Array.from({length: Math.min(limit, items.length)}, worker));
+      return results;
+    }
+
+    function renderChina(){
+      const grid = $('chinaGrid');
+      grid.innerHTML = '';
+      CHINA_CITIES.forEach(c=>{
+        const d = state.chinaData.get(c.id);
+        const card = document.createElement('div');
+        card.className = 'city-card glass';
+        card.innerHTML = `
+          <div class="city-name">${c.name}</div>
+          <div class="city-en">${c.en}</div>
+          <div class="now">
+            <div class="temp">${fmt(d?.nowTemp)}</div>
+            <div class="feel">体感 ${fmt(d?.nowFeels)}<br>${WEATHER_MAP[d?.nowCode]||'--'}</div>
+          </div>
+          <div class="mini" style="margin-top:8px;background:rgba(255,255,255,.04);padding:6px;border-radius:6px;border:1px solid var(--stroke);">
+            过去7天：☀️晴 ${d?.weatherCounts?.sunny||0} | ☁️阴 ${d?.weatherCounts?.cloud||0} | 🌧️雨 ${d?.weatherCounts?.rain||0} | ❄️雪 ${d?.weatherCounts?.snow||0}
+          </div>
+          <div class="mini">一周平均温度：${fmt(d?.avgTemp)}</div>
+          <div class="mini">均高/均低：${fmt(d?.avgHigh)} / ${fmt(d?.avgLow)}</div>
+          <div class="mini">体感均高/均低：${fmt(d?.avgFeelHigh)} / ${fmt(d?.avgFeelLow)}</div>
+          ${sparkline(d?.highs||[])}
+        `;
+        grid.appendChild(card);
+      });
+    }
+
+    function renderCompareTable(rows){
+      const tbody = $('compareBody');
+      const base = state.chinaData.get(state.compareId);
+      tbody.innerHTML = '';
+      rows.forEach(r=>{
+        const delta = Number.isFinite(r.data.nowFeels) && Number.isFinite(base?.nowFeels)
+          ? r.data.nowFeels - base.nowFeels
+          : NaN;
+        let deltaHtml = '—';
+        if (Number.isFinite(delta)) {
+          const sign = delta > 0 ? '+' : '';
+          const cls = delta > 0 ? 'delta-hot' : (delta < 0 ? 'delta-cold' : '');
+          deltaHtml = `<span class="${cls}">${sign}${Math.round(delta)}°C</span>`;
+        }
+        
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${r.rank}</td>
+          <td><b>${r.college}</b><br><span style="color:var(--muted);font-size:12px;">${r.town}</span></td>
+          <td style="font-size:15px;font-weight:700;">${fmt(r.data.nowTemp)}</td>
+          <td>${fmt(r.data.nowFeels)}</td>
+          <td>${deltaHtml}</td>
+          <td>${fmt(r.data.avgTemp)} (高${fmt(r.data.avgHigh)}/低${fmt(r.data.avgLow)})</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function renderSchoolCards(rows){
+      const wrap = $('schoolsGrid');
+      wrap.innerHTML = '';
+      rows.forEach(r=>{
+        const d = r.data;
+        const hot = d.hottestDay ? `${d.hottestDay.date.slice(5)}  (${fmt(d.hottestDay.value)})` : '—';
+        const cold = d.coldestDay ? `${d.coldestDay.date.slice(5)}  (${fmt(d.coldestDay.value)})` : '—';
+
+        const base = state.chinaData.get(state.compareId);
+        const delta = Number.isFinite(d.nowFeels) && Number.isFinite(base?.nowFeels) ? d.nowFeels - base.nowFeels : NaN;
+        let diffStr = '';
+        if(Number.isFinite(delta)){
+          const cName = CHINA_CITIES.find(c=>c.id===state.compareId)?.name || '对照城市';
+          if(delta > 0) diffStr = `<span style="color:var(--warm)">比${cName}热 ${Math.round(delta)}°</span>`;
+          else if(delta < 0) diffStr = `<span style="color:var(--cold)">比${cName}冷 ${Math.abs(Math.round(delta))}°</span>`;
+          else diffStr = `与${cName}体感相同`;
+        }
+
+        const card = document.createElement('article');
+        card.className = 'school-card glass';
+        card.innerHTML = `
+          <div class="head">
+            <div>
+              <div class="name">${r.college}</div>
+              <div class="town">${r.town}</div>
+            </div>
+            <div class="rank">#${r.rank}</div>
+          </div>
+          <div class="now" style="justify-content:space-between">
+            <div style="display:flex;align-items:end;gap:10px;">
+              <div class="temp">${fmt(d.nowTemp)}</div>
+              <div class="feel">体感 ${fmt(d.nowFeels)}<br>${WEATHER_MAP[d.nowCode]||'--'}</div>
+            </div>
+            <div style="font-size:12px;text-align:right;">${diffStr}</div>
+          </div>
+          <div class="metrics">
+            <div class="metric"><div class="k">近7日平均气温</div><div class="v" style="font-size:16px;">${fmt(d.avgTemp)}</div></div>
+            <div class="metric"><div class="k">近7日均高 / 均低</div><div class="v">${fmt(d.avgHigh)} / ${fmt(d.avgLow)}</div></div>
+            <div class="metric"><div class="k">近7日体感高 / 低</div><div class="v">${fmt(d.avgFeelHigh)} / ${fmt(d.avgFeelLow)}</div></div>
+            <div class="metric"><div class="k">本周最高</div><div class="v">${hot}</div></div>
+            <div class="metric"><div class="k">本周最低</div><div class="v">${cold}</div></div>
+          </div>
+          <div style="font-size:12px;color:var(--muted);margin-top:8px;background:rgba(255,255,255,.04);padding:6px;border-radius:8px;border:1px solid var(--stroke);text-align:center;">
+            过去7天：☀️ 晴 ${d.weatherCounts.sunny} / ☁️ 阴 ${d.weatherCounts.cloud} / 🌧️ 雨 ${d.weatherCounts.rain} / ❄️ 雪 ${d.weatherCounts.snow}
+          </div>
+          <div style="font-size:11px;color:var(--muted);margin-top:8px;">过去7天最高温曲线：</div>
+          ${sparkline(d.highs||[])}
+        `;
+        wrap.appendChild(card);
+      });
+    }
+
+    function applyFiltersRender(){
+      const base = state.chinaData.get(state.compareId);
+      const q = state.search.trim().toLowerCase();
+
+      let rows = state.schoolData.filter(r => 
+        !q || r.college.toLowerCase().includes(q) || r.town.toLowerCase().includes(q)
+      );
+
+      rows.sort((a,b)=>{
+        if(state.sortBy==='rank') return a.rank - b.rank;
+
+        const aFeelValid = Number.isFinite(a.data.nowFeels);
+        const bFeelValid = Number.isFinite(b.data.nowFeels);
+        const aAvgValid = Number.isFinite(a.data.avgTemp);
+        const bAvgValid = Number.isFinite(b.data.avgTemp);
+
+        if(state.sortBy==='feels_desc') {
+          if(!aFeelValid && !bFeelValid) return 0;
+          if(!aFeelValid) return 1;
+          if(!bFeelValid) return -1;
+          return b.data.nowFeels - a.data.nowFeels;
+        }
+        
+        if(state.sortBy==='avg_temp_desc') {
+          if(!aAvgValid && !bAvgValid) return 0;
+          if(!aAvgValid) return 1;
+          if(!bAvgValid) return -1;
+          return b.data.avgTemp - a.data.avgTemp;
+        }
+        
+        if(state.sortBy.startsWith('delta_compare')){
+          const baseValid = Number.isFinite(base?.nowFeels);
+          const daValid = aFeelValid && baseValid;
+          const dbValid = bFeelValid && baseValid;
+          
+          if(!daValid && !dbValid) return 0;
+          if(!daValid) return 1;  // 无效数据排在最后
+          if(!dbValid) return -1; // 无效数据排在最后
+          
+          const da = a.data.nowFeels - base.nowFeels;
+          const db = b.data.nowFeels - base.nowFeels;
+          
+          if(state.sortBy==='delta_compare_desc') return db - da; // 热到冷
+          if(state.sortBy==='delta_compare_asc') return da - db;  // 冷到热
+        }
+        return a.rank - b.rank;
+      });
+
+      renderCompareTable(rows);
+      renderSchoolCards(rows);
+      
+      const el = $('quickStats');
+      const feelVals = rows.map(r=>r.data.nowFeels).filter(Number.isFinite);
+      const avgFeel = avg(feelVals);
+      const hotterCount = rows.filter(r=> Number.isFinite(r.data.nowFeels) && Number.isFinite(base?.nowFeels) && r.data.nowFeels > base.nowFeels).length;
+      const colderCount = rows.filter(r=> Number.isFinite(r.data.nowFeels) && Number.isFinite(base?.nowFeels) && r.data.nowFeels < base.nowFeels).length;
+
+      el.innerHTML = `
+        <span class="chip">符合条件的学校：${rows.length}</span>
+        <span class="chip">LAC 平均体感：${fmt(avgFeel)}</span>
+        <span class="chip" style="color:var(--warm);border-color:var(--warm)">比 对照城市 更暖：${hotterCount} 所</span>
+        <span class="chip" style="color:var(--cold);border-color:var(--cold)">比 对照城市 更冷：${colderCount} 所</span>
+      `;
+    }
+
+    async function loadData(){
+      const statusEl = $('status');
+      $('refreshBtn').disabled = true;
+      statusEl.textContent = '正在从 Open-Meteo 拉取各地实时气象数据...';
+      $('weekRange').value = weekRangeText();
+
+      try{
+        let count = 0;
+        const total = CHINA_CITIES.length + LAC_COLLEGES.length;
+
+        const chinaRes = await runConcurrency(CHINA_CITIES, async (c)=>{
+          const data = await fetchWeather(c.lat, c.lon);
+          count++; statusEl.textContent = `拉取进度: ${count} / ${total}`;
+          return { id:c.id, data };
+        }, 5);
+        chinaRes.forEach(x=> state.chinaData.set(x.id, x.data));
+
+        const schoolRes = await runConcurrency(LAC_COLLEGES, async (s)=>{
+          const data = await fetchWeather(s.lat, s.lon);
+          count++; statusEl.textContent = `拉取进度: ${count} / ${total}`;
+          return { ...s, data };
+        }, 8);
+        state.schoolData = schoolRes;
+
+        renderChina();
+        applyFiltersRender();
+
+        statusEl.textContent = `数据拉取完成。最后更新：${new Date().toLocaleTimeString()}`;
+      }catch(e){
+        console.error(e);
+        statusEl.textContent = `数据拉取失败：${e.message}`;
+      }finally{
+        $('refreshBtn').disabled = false;
+      }
+    }
+
+    function init(){
+      const sel = $('compareCity');
+      sel.innerHTML = CHINA_CITIES.map(c=>`<option value="${c.id}" ${c.id==='shanghai'?'selected':''}>${c.name} (${c.en})</option>`).join('');
+
+      sel.addEventListener('change', ()=>{ state.compareId = sel.value; applyFiltersRender(); });
+      $('searchInput').addEventListener('input', (e)=>{ state.search = e.target.value; applyFiltersRender(); });
+      $('sortBy').addEventListener('change', (e)=>{ state.sortBy = e.target.value; applyFiltersRender(); });
+      $('refreshBtn').addEventListener('click', loadData);
+    }
+
+    init();
+    loadData();
+  </script>
+</body>
+</html>
