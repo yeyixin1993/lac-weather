@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
@@ -165,7 +165,7 @@
       </div>
       <div class="field glass">
         <label>统计周期</label>
-        <input id="weekRange" type="text" readonly />
+        <select id="weekRange"></select>
       </div>
       <div class="field glass">
         <label>&nbsp;</label>
@@ -175,20 +175,20 @@
 
     <div id="status" class="status">准备拉取数据...</div>
 
-    <h2 class="section-title">国内参照城市（实时 & 过去7天趋势）</h2>
+    <h2 class="section-title" id="chinaTitle">国内参照城市（当期7天趋势）</h2>
     <div id="chinaGrid" class="china-grid"></div>
 
-    <h2 class="section-title">LAC 与参照城市实时对比一览</h2>
+    <h2 class="section-title" id="compareTitle">LAC 与参照城市当期对比一览</h2>
     <div class="glass compare-table-wrap">
       <table>
         <thead>
           <tr>
             <th>Rank</th>
             <th>School (Town)</th>
-            <th>当前气温</th>
-            <th>当前体感</th>
+            <th id="thNowTemp">期末气温</th>
+            <th id="thNowFeels">期末体感</th>
             <th>较参照城</br>市体感差</th>
-            <th>过去7天均高 / 均低</th>
+            <th>该周期均高 / 均低</th>
           </tr>
         </thead>
         <tbody id="compareBody"></tbody>
@@ -285,21 +285,34 @@
       schoolData: [],
       compareId: 'shanghai',
       search: '',
-      sortBy: 'rank'
+      sortBy: 'rank',
+      weekOffset: 0
     };
 
     const $ = (id) => document.getElementById(id);
 
+    function initWeekRange(){
+      const sel = $('weekRange');
+      let html = '';
+      for (let i = 0; i <= 52; i++) {
+        const end = new Date();
+        end.setDate(end.getDate() - i * 7);
+        const start = new Date(end);
+        start.setDate(end.getDate() - 6);
+        const f = d => `${d.getFullYear()}/${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getDate().toString().padStart(2,'0')}`;
+        let label = i === 0 ? `近7天含今日 (${f(start)} - ${f(end)})` : `${i}周前 (${f(start)} - ${f(end)})`;
+        html += `<option value="${i}">${label}</option>`;
+      }
+      sel.innerHTML = html;
+      sel.value = state.weekOffset;
+      sel.addEventListener('change', (e) => {
+        state.weekOffset = parseInt(e.target.value, 10);
+        loadData();
+      });
+    }
+
     function fmt(v){ return Number.isFinite(v) ? `${Math.round(v)}°C` : '—'; }
     function avg(nums){ const a = nums.filter(Number.isFinite); return a.length ? a.reduce((s,n)=>s+n,0)/a.length : NaN; }
-
-    function weekRangeText(){
-      const end = new Date();
-      const start = new Date(end);
-      start.setDate(end.getDate()-6);
-      const f = d => `${d.getMonth()+1}/${d.getDate()}`;
-      return `${f(start)} - ${f(end)} (近7天含今日)`;
-    }
 
     function sparkline(values){
       const v = values.filter(Number.isFinite);
@@ -335,14 +348,36 @@
     }
 
     async function fetchWeather(lat, lon){
-      const url = new URL('https://api.open-meteo.com/v1/forecast');
+      const isHistory = state.weekOffset > 0;
+      const urlStr = isHistory ? 'https://archive-api.open-meteo.com/v1/archive' : 'https://api.open-meteo.com/v1/forecast';
+      const url = new URL(urlStr);
+      
+      const end = new Date();
+      end.setDate(end.getDate() - state.weekOffset * 7);
+      const start = new Date(end);
+      start.setDate(end.getDate() - 6);
+
+      const fmtDate = d => {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const d_ = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d_}`;
+      };
+
       url.searchParams.set('latitude', lat);
       url.searchParams.set('longitude', lon);
       url.searchParams.set('timezone', 'auto');
       url.searchParams.set('temperature_unit', 'celsius');
-      url.searchParams.set('past_days', '6');  // 过去6天 + forecast_days:1 (今天) = 7天数据。
-      url.searchParams.set('forecast_days', '1');
-      url.searchParams.set('current', 'temperature_2m,apparent_temperature,weather_code');
+      
+      if (!isHistory) {
+        url.searchParams.set('past_days', '6');  // 过去6天 + forecast_days:1 (今天) = 7天数据。
+        url.searchParams.set('forecast_days', '1');
+        url.searchParams.set('current', 'temperature_2m,apparent_temperature,weather_code');
+      } else {
+        url.searchParams.set('start_date', fmtDate(start));
+        url.searchParams.set('end_date', fmtDate(end));
+      }
+      
       url.searchParams.set('daily', 'temperature_2m_max,temperature_2m_min,temperature_2m_mean,apparent_temperature_max,apparent_temperature_min,weather_code');
 
       const r = await fetch(url);
@@ -365,13 +400,18 @@
         else rain++;
       });
 
+      const lastIdx = highs.length - 1;
+      const nTemp = isHistory ? means[lastIdx] : j?.current?.temperature_2m;
+      const nFeels = isHistory ? ((feelHighs[lastIdx] + feelLows[lastIdx]) / 2) : j?.current?.apparent_temperature;
+      const nCode = isHistory ? dailyCodes[lastIdx] : j?.current?.weather_code;
+
       const hottestIdx = highs.reduce((m,v,i,a)=> Number.isFinite(v) && (m<0 || v>a[m]) ? i : m, -1);
       const coldestIdx = lows.reduce((m,v,i,a)=> Number.isFinite(v) && (m<0 || v<a[m]) ? i : m, -1);
 
       return {
-        nowTemp: j?.current?.temperature_2m,
-        nowFeels: j?.current?.apparent_temperature,
-        nowCode: j?.current?.weather_code,
+        nowTemp: nTemp,
+        nowFeels: nFeels,
+        nowCode: nCode,
         avgTemp: avg(means),
         avgHigh: avg(highs),
         avgLow: avg(lows),
@@ -409,10 +449,10 @@
           <div class="city-en">${c.en}</div>
           <div class="now">
             <div class="temp">${fmt(d?.nowTemp)}</div>
-            <div class="feel">体感 ${fmt(d?.nowFeels)}<br>${WEATHER_MAP[d?.nowCode]||'--'}</div>
+            <div class="feel">${state.weekOffset > 0 ? '期末体感' : '当前体感'} ${fmt(d?.nowFeels)}<br>${WEATHER_MAP[d?.nowCode]||'--'}</div>
           </div>
           <div class="mini" style="margin-top:8px;background:rgba(255,255,255,.04);padding:6px;border-radius:6px;border:1px solid var(--stroke);">
-            过去7天：☀️晴 ${d?.weatherCounts?.sunny||0} | ☁️阴 ${d?.weatherCounts?.cloud||0} | 🌧️雨 ${d?.weatherCounts?.rain||0} | ❄️雪 ${d?.weatherCounts?.snow||0}
+            该周天气：☀️晴 ${d?.weatherCounts?.sunny||0} | ☁️阴 ${d?.weatherCounts?.cloud||0} | 🌧️雨 ${d?.weatherCounts?.rain||0} | ❄️雪 ${d?.weatherCounts?.snow||0}
           </div>
           <div class="mini">一周平均温度：${fmt(d?.avgTemp)}</div>
           <div class="mini">均高/均低：${fmt(d?.avgHigh)} / ${fmt(d?.avgLow)}</div>
@@ -455,51 +495,55 @@
       const wrap = $('schoolsGrid');
       wrap.innerHTML = '';
       rows.forEach(r=>{
-        const d = r.data;
-        const hot = d.hottestDay ? `${d.hottestDay.date.slice(5)}  (${fmt(d.hottestDay.value)})` : '—';
-        const cold = d.coldestDay ? `${d.coldestDay.date.slice(5)}  (${fmt(d.coldestDay.value)})` : '—';
+        try {
+          const d = r.data;
+          const hot = (d.hottestDay && d.hottestDay.date) ? `${d.hottestDay.date.toString().slice(5)}  (${fmt(d.hottestDay.value)})` : '—';
+          const cold = (d.coldestDay && d.coldestDay.date) ? `${d.coldestDay.date.toString().slice(5)}  (${fmt(d.coldestDay.value)})` : '—';
 
-        const base = state.chinaData.get(state.compareId);
-        const delta = Number.isFinite(d.nowFeels) && Number.isFinite(base?.nowFeels) ? d.nowFeels - base.nowFeels : NaN;
-        let diffStr = '';
-        if(Number.isFinite(delta)){
-          const cName = CHINA_CITIES.find(c=>c.id===state.compareId)?.name || '对照城市';
-          if(delta > 0) diffStr = `<span style="color:var(--warm)">比${cName}热 ${Math.round(delta)}°</span>`;
-          else if(delta < 0) diffStr = `<span style="color:var(--cold)">比${cName}冷 ${Math.abs(Math.round(delta))}°</span>`;
-          else diffStr = `与${cName}体感相同`;
+          const base = state.chinaData.get(state.compareId);
+          const delta = Number.isFinite(d.nowFeels) && Number.isFinite(base?.nowFeels) ? d.nowFeels - base.nowFeels : NaN;
+          let diffStr = '';
+          if(Number.isFinite(delta)){
+            const cName = CHINA_CITIES.find(c=>c.id===state.compareId)?.name || '对照城市';
+            if(delta > 0) diffStr = `<span style="color:var(--warm)">比${cName}热 ${Math.round(delta)}°</span>`;
+            else if(delta < 0) diffStr = `<span style="color:var(--cold)">比${cName}冷 ${Math.abs(Math.round(delta))}°</span>`;
+            else diffStr = `与${cName}体感相同`;
+          }
+
+          const card = document.createElement('article');
+          card.className = 'school-card glass';
+          card.innerHTML = `
+            <div class="head">
+              <div>
+                <div class="name">${r.college}</div>
+                <div class="town">${r.town}</div>
+              </div>
+              <div class="rank">#${r.rank}</div>
+            </div>
+            <div class="now" style="justify-content:space-between">
+              <div style="display:flex;align-items:end;gap:10px;">
+                <div class="temp">${fmt(d.nowTemp)}</div>
+                <div class="feel">${state.weekOffset > 0 ? '期末体感' : '当前体感'} ${fmt(d.nowFeels)}<br>${WEATHER_MAP[d.nowCode]||'--'}</div>
+              </div>
+              <div style="font-size:12px;text-align:right;">${diffStr}</div>
+            </div>
+            <div class="metrics">
+              <div class="metric"><div class="k">全周平均气温</div><div class="v" style="font-size:16px;">${fmt(d.avgTemp)}</div></div>
+              <div class="metric"><div class="k">全周均高 / 均低</div><div class="v">${fmt(d.avgHigh)} / ${fmt(d.avgLow)}</div></div>
+              <div class="metric"><div class="k">全周体感高 / 低</div><div class="v">${fmt(d.avgFeelHigh)} / ${fmt(d.avgFeelLow)}</div></div>
+              <div class="metric"><div class="k">全周最高</div><div class="v">${hot}</div></div>
+              <div class="metric"><div class="k">全周最低</div><div class="v">${cold}</div></div>
+            </div>
+            <div style="font-size:12px;color:var(--muted);margin-top:8px;background:rgba(255,255,255,.04);padding:6px;border-radius:8px;border:1px solid var(--stroke);text-align:center;">
+              全周天气：☀️ 晴 ${d.weatherCounts.sunny} / ☁️ 阴 ${d.weatherCounts.cloud} / 🌧️ 雨 ${d.weatherCounts.rain} / ❄️ 雪 ${d.weatherCounts.snow}
+            </div>
+            <div style="font-size:11px;color:var(--muted);margin-top:8px;">全周最高温曲线：</div>
+            ${sparkline(d.highs||[])}
+          `;
+          wrap.appendChild(card);
+        } catch (err) {
+          console.error('Card render error for', r.college, err);
         }
-
-        const card = document.createElement('article');
-        card.className = 'school-card glass';
-        card.innerHTML = `
-          <div class="head">
-            <div>
-              <div class="name">${r.college}</div>
-              <div class="town">${r.town}</div>
-            </div>
-            <div class="rank">#${r.rank}</div>
-          </div>
-          <div class="now" style="justify-content:space-between">
-            <div style="display:flex;align-items:end;gap:10px;">
-              <div class="temp">${fmt(d.nowTemp)}</div>
-              <div class="feel">体感 ${fmt(d.nowFeels)}<br>${WEATHER_MAP[d.nowCode]||'--'}</div>
-            </div>
-            <div style="font-size:12px;text-align:right;">${diffStr}</div>
-          </div>
-          <div class="metrics">
-            <div class="metric"><div class="k">近7日平均气温</div><div class="v" style="font-size:16px;">${fmt(d.avgTemp)}</div></div>
-            <div class="metric"><div class="k">近7日均高 / 均低</div><div class="v">${fmt(d.avgHigh)} / ${fmt(d.avgLow)}</div></div>
-            <div class="metric"><div class="k">近7日体感高 / 低</div><div class="v">${fmt(d.avgFeelHigh)} / ${fmt(d.avgFeelLow)}</div></div>
-            <div class="metric"><div class="k">本周最高</div><div class="v">${hot}</div></div>
-            <div class="metric"><div class="k">本周最低</div><div class="v">${cold}</div></div>
-          </div>
-          <div style="font-size:12px;color:var(--muted);margin-top:8px;background:rgba(255,255,255,.04);padding:6px;border-radius:8px;border:1px solid var(--stroke);text-align:center;">
-            过去7天：☀️ 晴 ${d.weatherCounts.sunny} / ☁️ 阴 ${d.weatherCounts.cloud} / 🌧️ 雨 ${d.weatherCounts.rain} / ❄️ 雪 ${d.weatherCounts.snow}
-          </div>
-          <div style="font-size:11px;color:var(--muted);margin-top:8px;">过去7天最高温曲线：</div>
-          ${sparkline(d.highs||[])}
-        `;
-        wrap.appendChild(card);
       });
     }
 
@@ -571,8 +615,19 @@
     async function loadData(){
       const statusEl = $('status');
       $('refreshBtn').disabled = true;
-      statusEl.textContent = '正在从 Open-Meteo 拉取各地实时气象数据...';
-      $('weekRange').value = weekRangeText();
+      statusEl.textContent = '正在从 Open-Meteo 拉取各地气象数据...';
+
+      const isHistory = state.weekOffset > 0;
+      $('chinaTitle').textContent = isHistory ? '国内参照城市（该周7天趋势）' : '国内参照城市（实时 & 过去7天趋势）';
+      $('compareTitle').textContent = isHistory ? 'LAC 与参照城市该周对比一览' : 'LAC 与参照城市实时对比一览';
+      $('thNowTemp').textContent = isHistory ? '期末气温' : '当前气温';
+      $('thNowFeels').textContent = isHistory ? '期末体感' : '当前体感';
+      $('refreshBtn').textContent = isHistory ? '刷新历史数据' : '刷新实时数据';
+      
+      const sortSel = $('sortBy');
+      if (sortSel.options[1].value === 'feels_desc') {
+        sortSel.options[1].text = isHistory ? '按期末体感 (高→低)' : '按当前体感 (高→低)';
+      }
 
       try{
         let count = 0;
@@ -605,6 +660,7 @@
     }
 
     function init(){
+      initWeekRange();
       const sel = $('compareCity');
       sel.innerHTML = CHINA_CITIES.map(c=>`<option value="${c.id}" ${c.id==='shanghai'?'selected':''}>${c.name} (${c.en})</option>`).join('');
 
